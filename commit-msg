@@ -1,0 +1,37 @@
+#!/bin/sh
+
+key="<Toggl API Key>"
+workspace_id="<Workspace ID>"
+project_id="<Project ID>"
+
+msg=$(cat $1)
+
+endpoint="https://api.track.toggl.com/api/v9"
+k="-u $key:api_token"
+get_attr()
+{
+        echo $current_entry | grep -E -o "\"$1\":.*?," | sed "s/\"$1\"://" | sed 's/.$//'
+}
+get_str_attr()
+{
+        echo $current_entry | grep -E -o "\"$1\":\".*?\"," | sed "s/\"$1\":\"//" | sed 's/..$//'
+}
+current_entry=$(curl -s $endpoint/me $k);
+time_stamp=$(get_str_attr at);
+current_entry=$(curl -s $endpoint/me/time_entries/current $k);
+current_project_id=$(get_attr project_id);
+if [ $project_id = "$current_project_id" ]; then
+        description=$(get_str_attr description);
+        time_entry_id=$(get_attr id);
+        body="{\"description\":\"$description; $msg\"}"
+        echo $body | curl -s -X PUT $endpoint/workspaces/{$workspace_id}/time_entries/{$time_entry_id} -H "Content-Type: application/json" --data "@-" $k > /dev/null
+        exit 0
+fi
+
+if [ ! -z "$current_project_id" ]; then
+        time_entry_id=$(get_attr id);
+        curl -s -X PATCH $endpoint/workspaces/{$workspace_id}/time_entries/{$time_entry_id}/stop $k > /dev/null
+fi
+new_entry="{\"billable\":false,\"created_with\":\"toggl-git\",\"description\":\"$msg\",\"duration\":-1,\"project_id\":$project_id,\"start\":\"$time_stamp\",\"workspace_id\":$workspace_id}"
+echo $new_entry | curl -s -X POST $endpoint/workspaces/{$workspace_id}/time_entries -H "Content-Type: application/json" --data "@-" $k > /dev/null
+exit 0
